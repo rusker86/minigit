@@ -66,39 +66,63 @@ void add(char *filename) {
         sprintf(&hash_hex[i * 2], "%02x", hash[i]);
     }
     hash_hex[SHA_DIGEST_LENGTH * 2] = '\0';
-    
-
-    printf("%s\n", hash_hex);
 
     getcwd(cwd, sizeof(cwd));
     strcat(cwd, "/.minigit/objects/");
     strcat(cwd, hash_hex);
-
-    printf("%s\n", cwd);
 
     FILE *out = fopen(cwd, "wb");
     if(out == NULL) {
         printf("Failed to open file: %s\n", cwd);
         return;
     }
-
     rewind(file);
 
-    fwrite(header, 1, header_size + 1, out);
+    size_t blob_size = file_size + header_size + 1;
 
-    while((bytes_read = fread(buffer, 1, sizeof(buffer), file)) > 0) {
-        fwrite(buffer, 1, bytes_read, out);
+    unsigned char *blob_data = malloc(blob_size);
+    if(blob_data == NULL) {
+        printf("Failed to allocate memory\n");
+        return;
     }
 
-    size_t written = fwrite(buffer, 1, bytes_read, out);
+    memcpy(blob_data, header, header_size + 1);
+    size_t offset = header_size + 1;
     
+    while((bytes_read = fread(buffer, 1, sizeof(buffer), file)) > 0) {
+        memcpy(blob_data + offset, buffer, bytes_read);
+        offset += bytes_read;
+    }
+
+    //Comprimir con zlib
+    uLongf compressed_size = compressBound(blob_size);
+    unsigned char *compressed_data = malloc(compressed_size);
+    if(compressed_data == NULL) {
+        printf("Failed to allocate memory\n");
+        return;
+    }
+
+    int result = compress2(compressed_data, &compressed_size, blob_data, blob_size, Z_DEFAULT_COMPRESSION);
+    if(result != Z_OK) {
+        printf("Failed to compress data\n");
+        return;
+    }
+
+    fwrite(compressed_data, 1, compressed_size, out);
 
     fclose(file);
     fclose(out);
+
+    free(compressed_data);
+    free(blob_data);
 }
 
 void commit() {
     printf("Committing changes...\n");
+}
+
+void cat(char *hash) {
+    printf("Cating file: %s\n", hash);
 }
 
 int main(int argc, char *argv[]) {
@@ -115,11 +139,12 @@ int main(int argc, char *argv[]) {
         add(argv[2]);
     } else if((strcmp(command, "commit") == 0) && (argc == 2)) {
         commit();
+    } else if((strcmp(command, "cat") == 0) && (argc == 3)) {
+        cat(argv[2]);
     } else {
         printf("Unknown command: %s\n", command);
         return 1;
     }
 
     return 0;
-        return 1;
 }

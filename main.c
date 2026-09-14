@@ -3,6 +3,7 @@
 #include <sys/stat.h>
 #include <stdlib.h>
 #include <openssl/sha.h>
+#include <zconf.h>
 #include <zlib.h>
 
 #ifdef _WIN32
@@ -32,7 +33,7 @@ void add(char *filename) {
     size_t bytes_read;
     char *final_hash;
     unsigned char buffer[4096];
-    
+
 
     FILE *file = fopen(cwd, "rb");
 
@@ -88,7 +89,7 @@ void add(char *filename) {
 
     memcpy(blob_data, header, header_size + 1);
     size_t offset = header_size + 1;
-    
+
     while((bytes_read = fread(buffer, 1, sizeof(buffer), file)) > 0) {
         memcpy(blob_data + offset, buffer, bytes_read);
         offset += bytes_read;
@@ -117,13 +118,92 @@ void add(char *filename) {
     free(blob_data);
 }
 
+void cat(char *hash) {
+    char cwd[1024];
+    getcwd(cwd, sizeof(cwd));
+
+    strcat(cwd, "/.minigit/objects/");
+    strcat(cwd, hash);
+
+    FILE *file = fopen(cwd, "rb");
+    if(file == NULL) {
+        printf("Failed to open file: %s\n", cwd);
+        return;
+    }
+
+    fseek(file, 0, SEEK_END);
+    long file_size = ftell(file);
+    rewind(file);
+
+    unsigned char *compressed_data = malloc(file_size);
+    if(compressed_data == NULL) {
+        printf("Failed to allocate memory\n");
+        return;
+    }
+
+    size_t bytes_read = fread(compressed_data, 1, file_size, file);
+    if(bytes_read != file_size) {
+        printf("Failed to read file\n");
+        free(compressed_data);
+        return;
+    }
+
+    fclose(file);
+
+    uLongf decompressed_capacity = 1;
+    uLongf decompressed_size = decompressed_capacity;
+    unsigned char *decompressed_data = malloc(decompressed_capacity);
+    if(decompressed_data == NULL) {
+        printf("Failed to allocate memory\n");
+        free(compressed_data);
+        return;
+    }
+
+    int result = uncompress(decompressed_data, &decompressed_size, compressed_data, file_size);
+    while(result == Z_BUF_ERROR) {
+        decompressed_capacity *= 2;
+        decompressed_size = decompressed_capacity;
+        
+        printf("Buffer error, increasing size to %lu\n", decompressed_size);
+
+        unsigned char *new_buffer = realloc(decompressed_data, decompressed_capacity);
+        if(new_buffer == NULL) {
+            printf("Failed to allocate memory\n");
+            free(compressed_data);
+            return;
+        }
+
+        decompressed_data = new_buffer;
+        result = uncompress(decompressed_data, &decompressed_size, compressed_data, file_size);
+    }
+
+    if(result != Z_OK) {
+        printf("Failed to decompress data\n");
+        free(compressed_data);
+        free(decompressed_data);
+        return;
+    }
+
+    size_t content_offset = 0;
+    while(
+        content_offset < decompressed_size != '\0' &&
+        decompressed_data[content_offset]
+    ) {
+        content_offset++;
+    }
+
+    size_t content_size = decompressed_size - content_offset - 1;   // El -1 es para el carácter nulo al final
+    fwrite(decompressed_data + content_offset + 1, 1, content_size, stdout);
+    printf("\n");
+
+    free(compressed_data);
+    free(decompressed_data);
+}
+
 void commit() {
     printf("Committing changes...\n");
 }
 
-void cat(char *hash) {
-    printf("Cating file: %s\n", hash);
-}
 
 int main(int argc, char *argv[]) {
     if(argc < 2) {

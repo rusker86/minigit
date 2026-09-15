@@ -1,5 +1,13 @@
-build: main.c
-	make clean
-	gcc -o minigit main.c -lcrypto -lz
+CC ?= gcc
+CFLAGS ?= -Wall -Wextra -std=c11
+LDFLAGS = -lcrypto -lz
+TARGET = minigit
+SOURCES = src/main.c src/repository.c
+
+.PHONY: build clean
+
+build: $(SOURCES)
+	$(CC) $(CFLAGS) -o $(TARGET) $(SOURCES) $(LDFLAGS)
+
 clean:
-	rm -f minigit
+	$(RM) $(TARGET)
